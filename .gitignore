@@ -9,3 +9,10 @@ thumbs.db
 .DS_Store
 .idea
 
+
+# Kisisel yerel calisma dosyalari
+/orioninsist/
+
+/compose.yaml.bak
+
+/compose.yaml.before-cpu

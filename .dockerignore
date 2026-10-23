@@ -1,0 +1,13 @@
+.git
+.github
+orioninsist/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+.venv/
+.env
+.env.*
+compose.yaml.bak
+compose.yaml.before-cpu
