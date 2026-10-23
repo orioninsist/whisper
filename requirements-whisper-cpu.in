@@ -1,0 +1,10 @@
+# Whisper CPU dependencies
+# Verified against orioninsist/whisper:cpu-test
+# Python 3.11 / Linux x86_64
+
+torch==2.14.1+cpu
+numba==0.68.0
+numpy==2.4.6
+tqdm==4.70.1
+more-itertools==11.2.1
+tiktoken==0.14.0
