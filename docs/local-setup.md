@@ -96,3 +96,115 @@ Ag baglantisi kapali olarak calistirilir.
 
 Bu belge mevcut dogrulanmis ortami kaydeder.
 Tam otomatik yeniden kurulum garantisi vermez.
+
+## Temiz kurulum icin model edinme adimlari
+
+Asagidaki komutlar Fedora terminalinde, proje kok dizininde
+calistirilmak uzere hazirlanmistir.
+
+Model dosyalari GitHub deposuna eklenmez.
+Dosyalar orioninsist/ altinda saklanir.
+
+### Model kaynaklari
+
+Whisper base modeli:
+
+https://openaipublic.azureedge.net/main/whisper/models/ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e/base.pt
+
+Kokoro model deposu:
+
+https://huggingface.co/hexgrad/Kokoro-82M
+
+Kokoro sabit commit:
+
+f3ff3571791e39611d31c381e3a41a3af07b4987
+
+spaCy en_core_web_sm 3.8.0:
+
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+
+Bu kaynaklardan alinan dosyalarin SHA256 degerleri
+mevcut yerel dosyalarla karsilastirilarak dogrulanmistir.
+
+### Dosyalari yeniden edinme
+
+Asagidaki komutlar yalnizca bos bir kurulum dizininde
+kullanilmalidir. Mevcut dosyalarin uzerine yazabilir.
+
+    PROJECT="/home/murat/Project/whisper"
+    REV="f3ff3571791e39611d31c381e3a41a3af07b4987"
+    BASE="https://huggingface.co/hexgrad/Kokoro-82M/resolve/$REV"
+
+    mkdir -p "$PROJECT/orioninsist/models"
+    mkdir -p "$PROJECT/orioninsist/kokoro/voices"
+    mkdir -p "$PROJECT/orioninsist/kokoro/spacy"
+
+    curl --fail --location \
+        --output "$PROJECT/orioninsist/models/base.pt" \
+        "https://openaipublic.azureedge.net/main/whisper/models/ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e/base.pt"
+
+    curl --fail --location \
+        --output "$PROJECT/orioninsist/kokoro/config.json" \
+        "$BASE/config.json"
+
+    curl --fail --location \
+        --output "$PROJECT/orioninsist/kokoro/kokoro-v1_0.pth" \
+        "$BASE/kokoro-v1_0.pth"
+
+    curl --fail --location \
+        --output "$PROJECT/orioninsist/kokoro/voices/af_heart.pt" \
+        "$BASE/voices/af_heart.pt"
+
+    curl --fail --location \
+        --output "$PROJECT/orioninsist/kokoro/voices/am_michael.pt" \
+        "$BASE/voices/am_michael.pt"
+
+    curl --fail --location \
+        --output "$PROJECT/orioninsist/kokoro/spacy/en_core_web_sm-3.8.0-py3-none-any.whl" \
+        "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+
+DIKKAT: Yukaridaki curl komutlari mevcut dosyalarin uzerine
+yazabilir. Yalnizca bos bir kurulum dizininde kullanilmalidir.
+Mevcut kurulumda calistirilmamalidir.
+
+### SHA256 dogrulamasi
+
+Indirme sonrasinda su komutla tum dosyalar kontrol edilir:
+
+    cd /home/murat/Project/whisper
+    sha256sum orioninsist/models/base.pt
+    sha256sum orioninsist/kokoro/config.json
+    sha256sum orioninsist/kokoro/kokoro-v1_0.pth
+    sha256sum orioninsist/kokoro/voices/af_heart.pt
+    sha256sum orioninsist/kokoro/voices/am_michael.pt
+    sha256sum orioninsist/kokoro/spacy/en_core_web_sm-3.8.0-py3-none-any.whl
+
+Beklenen SHA256 degerleri bu belgenin
+"Yerel model dosyalari" bolumunde listelenmistir.
+
+Whisper base.pt beklenen SHA256:
+
+ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e
+
+### Docker imajlarini yeniden olusturma
+
+Once Whisper CPU imaji:
+
+    docker build \
+        -f Dockerfile \
+        -t orioninsist/whisper:cpu-test \
+        .
+
+Ardindan Kokoro CPU imaji:
+
+    docker buildx build \
+        --build-context spacywheel=./orioninsist/kokoro/spacy \
+        -f Dockerfile.kokoro \
+        -t orioninsist/kokoro:rebuild-test \
+        --load \
+        .
+
+Bu komutlar mevcut imajlari degistirebileceginden,
+calisan sistemde yeniden derleme onaysiz yapilmamalidir.
+
+Temiz ortamda yeniden derleme ve CLI testi henuz yapilmamistir.
