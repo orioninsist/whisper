@@ -6,13 +6,13 @@ services:
     image: orioninsist/whisper:cpu-test
     user: "1000:1000"
     working_dir: /app
-    environment:
-      XDG_CACHE_HOME: /workspace/models
     volumes:
-      - ./orioninsist:/workspace:Z
+      - ./.local/models:/models:ro
+      - ./.local/outputs:/output:rw
     command: ["python", "-m", "whisper", "--help"]
     network_mode: none
     security_opt:
       - no-new-privileges:true
+      - label=level:s0:c463,c896
     cap_drop:
       - ALL
