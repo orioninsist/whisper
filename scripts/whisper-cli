@@ -66,6 +66,22 @@ tts() {
         --text "$TEXT" \
         --voice "$VOICE" \
         --output "/output/$NAME"
+
+    local STATUS=$?
+
+    if [ "$STATUS" -ne 0 ]; then
+        return "$STATUS"
+    fi
+
+    if [ ! -f "$OUTPUT/$NAME" ]; then
+        printf 'HATA: TTS cikti dosyasi bulunamadi.\n' >&2
+        return 1
+    fi
+
+    printf '\n=== TTS CIKTI BILGILERI ===\n'
+    printf 'Dosya adi: %s\n' "$NAME"
+    printf 'Tam dosya yolu: %s\n' "$OUTPUT/$NAME"
+    printf 'Bulundugu dizin: %s\n' "$OUTPUT"
 }
 
 stt() {
