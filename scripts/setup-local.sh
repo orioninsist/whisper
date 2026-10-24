@@ -121,16 +121,16 @@ download_checked() {
 printf '\n=== DİZİNLER ===\n'
 
 if ! mkdir -p \
-    orioninsist/models \
-    orioninsist/kokoro/voices \
-    orioninsist/kokoro/spacy; then
+    .local/models \
+    .local/kokoro/voices \
+    .local/kokoro/spacy; then
     fail "Yerel model dizinleri oluşturulamadı." || :
     return 1
 fi
 
 printf '\n=== WHISPER MODELİ ===\n'
 download_checked \
-    orioninsist/models/base.pt \
+    .local/models/base.pt \
     "$WHISPER_URL" \
     ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e || {
         return 1
@@ -139,35 +139,35 @@ download_checked \
 printf '\n=== KOKORO MODELLERİ ===\n'
 
 download_checked \
-    orioninsist/kokoro/config.json \
+    .local/kokoro/config.json \
     "$BASE/config.json" \
     5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f || {
         return 1
     }
 
 download_checked \
-    orioninsist/kokoro/kokoro-v1_0.pth \
+    .local/kokoro/kokoro-v1_0.pth \
     "$BASE/kokoro-v1_0.pth" \
     496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4 || {
         return 1
     }
 
 download_checked \
-    orioninsist/kokoro/voices/af_heart.pt \
+    .local/kokoro/voices/af_heart.pt \
     "$BASE/voices/af_heart.pt" \
     0ab5709b8ffab19bfd849cd11d98f75b60af7733253ad0d67b12382a102cb4ff || {
         return 1
     }
 
 download_checked \
-    orioninsist/kokoro/voices/am_michael.pt \
+    .local/kokoro/voices/am_michael.pt \
     "$BASE/voices/am_michael.pt" \
     9a443b79a4b22489a5b0ab7c651a0bcd1a30bef675c28333f06971abbd47bd37 || {
         return 1
     }
 
 download_checked \
-    orioninsist/kokoro/spacy/en_core_web_sm-3.8.0-py3-none-any.whl \
+    .local/kokoro/spacy/en_core_web_sm-3.8.0-py3-none-any.whl \
     "$SPACY_URL" \
     1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85 || {
         return 1
@@ -176,12 +176,12 @@ download_checked \
 printf '\n=== TÜM DOSYALARIN SON SHA-256 KONTROLÜ ===\n'
 
 if ! sha256sum --check <<'HASHES'
-ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e  orioninsist/models/base.pt
-5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f  orioninsist/kokoro/config.json
-496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4  orioninsist/kokoro/kokoro-v1_0.pth
-0ab5709b8ffab19bfd849cd11d98f75b60af7733253ad0d67b12382a102cb4ff  orioninsist/kokoro/voices/af_heart.pt
-9a443b79a4b22489a5b0ab7c651a0bcd1a30bef675c28333f06971abbd47bd37  orioninsist/kokoro/voices/am_michael.pt
-1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85  orioninsist/kokoro/spacy/en_core_web_sm-3.8.0-py3-none-any.whl
+ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e  .local/models/base.pt
+5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f  .local/kokoro/config.json
+496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4  .local/kokoro/kokoro-v1_0.pth
+0ab5709b8ffab19bfd849cd11d98f75b60af7733253ad0d67b12382a102cb4ff  .local/kokoro/voices/af_heart.pt
+9a443b79a4b22489a5b0ab7c651a0bcd1a30bef675c28333f06971abbd47bd37  .local/kokoro/voices/am_michael.pt
+1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85  .local/kokoro/spacy/en_core_web_sm-3.8.0-py3-none-any.whl
 HASHES
 then
     fail "Son model doğrulaması başarısız." || :
@@ -219,7 +219,7 @@ printf 'Etiket: %s\n' "$KOKORO_IMAGE"
 # Mevcut Dockerfile.kokoro değiştirilmez.
 # FROM satırı, yeni ve benzersiz Whisper etiketini kullanır.
 if ! docker buildx build \
-    --build-context spacywheel=./orioninsist/kokoro/spacy \
+    --build-context spacywheel=./.local/kokoro/spacy \
     --file - \
     --tag "$KOKORO_IMAGE" \
     --load \
