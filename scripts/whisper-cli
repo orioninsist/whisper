@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 PROJECT="/home/murat/Project/whisper"
-PRIVATE="$PROJECT/orioninsist"
+MODELS="$PROJECT/.local/kokoro"
+OUTPUT="$PROJECT/.local/outputs"
 IMAGE="orioninsist/kokoro:rebuild-test"
 SELINUX_LEVEL="s0:c463,c896"
 
@@ -24,7 +25,7 @@ else
         printf 'HATA: Ses female veya male olmali.\n' >&2
     elif [[ "$NAME" == */* ]] || [[ "$NAME" != *.wav ]]; then
         printf 'HATA: Yalnizca .wav dosya adi kullanin.\n' >&2
-    elif [ -e "$PRIVATE/$NAME" ] || [ -L "$PRIVATE/$NAME" ]; then
+    elif [ -e "$OUTPUT/$NAME" ] || [ -L "$OUTPUT/$NAME" ]; then
         printf 'HATA: Cikti dosyasi zaten mevcut: %s\n' "$NAME" >&2
     else
         docker run --rm \
@@ -35,9 +36,9 @@ else
             --security-opt no-new-privileges \
             --security-opt "label=level:$SELINUX_LEVEL" \
             --cap-drop ALL \
-            --mount "type=bind,src=$PRIVATE/kokoro,dst=/models,readonly" \
+            --mount "type=bind,src=$MODELS,dst=/models,readonly" \
             --mount "type=bind,src=$PROJECT/scripts/kokoro-tts.py,dst=/app/kokoro-tts.py,readonly" \
-            --mount "type=bind,src=$PRIVATE,dst=/output" \
+            --mount "type=bind,src=$OUTPUT,dst=/output" \
             --env HF_HUB_OFFLINE=1 \
             --env HF_HUB_DISABLE_TELEMETRY=1 \
             --entrypoint python \
