@@ -208,7 +208,9 @@ done
 printf '\n=== WHISPER İMAJI OLUŞTURULUYOR ===\n'
 printf 'Etiket: %s\n' "$WHISPER_IMAGE"
 
-if ! docker build -f Dockerfile -t "$WHISPER_IMAGE" .; then
+if ! docker build \
+    --build-context spacywheel=./.local/kokoro/spacy \
+    -f Dockerfile -t "$WHISPER_IMAGE" .; then
     fail "Whisper imajı oluşturulamadı; Kokoro derlemesi başlatılmadı." || :
     return 1
 fi
@@ -216,8 +218,7 @@ fi
 printf '\n=== KOKORO İMAJI OLUŞTURULUYOR ===\n'
 printf 'Etiket: %s\n' "$KOKORO_IMAGE"
 
-# Mevcut Dockerfile.kokoro değiştirilmez.
-# FROM satırı, yeni ve benzersiz Whisper etiketini kullanır.
+# Test edilmiş uv sync yapılandırması; benzersiz Whisper etiketi kullanılır.
 if ! docker buildx build \
     --build-context spacywheel=./.local/kokoro/spacy \
     --file - \
@@ -227,20 +228,13 @@ if ! docker buildx build \
 # syntax=docker/dockerfile:1.7
 FROM ${WHISPER_IMAGE}
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
 ENV UV_NO_CACHE=1
+ENV UV_LINK_MODE=copy
 
-RUN uv pip install --system \
-    --index-url https://pypi.org/simple \
-    "kokoro==0.9.4" \
-    "misaki[en]==0.9.4"
+RUN --mount=type=bind,from=spacywheel,source=/en_core_web_sm-3.8.0-py3-none-any.whl,target=/app/.local/kokoro/spacy/en_core_web_sm-3.8.0-py3-none-any.whl,readonly \
+    uv sync --locked --no-default-groups --group kokoro --no-editable
 
-RUN --mount=type=bind,from=spacywheel,source=/en_core_web_sm-3.8.0-py3-none-any.whl,target=/tmp/en_core_web_sm-3.8.0-py3-none-any.whl,readonly \
-    uv pip install --system --offline --no-deps \
-    /tmp/en_core_web_sm-3.8.0-py3-none-any.whl
-
-CMD ["python", "-c", "import kokoro; print('Kokoro import OK')"]
+CMD ["/app/.venv/bin/python", "-c", "import kokoro; print('Kokoro import OK')"]
 DOCKERFILE
 then
     fail "Kokoro imajı oluşturulamadı." || :
