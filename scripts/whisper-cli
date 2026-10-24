@@ -1,51 +1,178 @@
 #!/usr/bin/env bash
 
 PROJECT="/home/murat/Project/whisper"
-MODELS="$PROJECT/.local/kokoro"
+KOKORO_MODELS="$PROJECT/.local/kokoro"
+WHISPER_MODELS="$PROJECT/.local/models"
 OUTPUT="$PROJECT/.local/outputs"
-IMAGE="orioninsist/kokoro:rebuild-test"
+
+TTS_IMAGE="orioninsist/kokoro:rebuild-test"
+STT_IMAGE="orioninsist/whisper:local"
 SELINUX_LEVEL="s0:c463,c896"
 
 usage() {
     printf '%s\n' \
         'Kullanim:' \
-        '  whisper tts "Metin" [female|male] [dosya.wav]'
+        '  whisper tts "Metin" [female|male] [dosya.wav]' \
+        '  whisper stt /dosya/yolu/ses.mp3 [dil]' \
+        '  whisper stt /dosya/yolu/video.mp4 [dil]'
 }
 
-if [ "${1:-}" != "tts" ]; then
-    usage
-elif [ -z "${2:-}" ]; then
-    printf 'HATA: Metin gerekli.\n' >&2
-else
-    TEXT="$2"
-    VOICE="${3:-female}"
-    NAME="${4:-speech.wav}"
+tts() {
+    if [ "$#" -gt 3 ]; then
+        printf 'HATA: TTS icin fazla arguman.\n' >&2
+        return 1
+    fi
+
+    if [ -z "${1:-}" ]; then
+        printf 'HATA: Metin gerekli.\n' >&2
+        return 1
+    fi
+
+    local TEXT="$1"
+    local VOICE="${2:-female}"
+    local NAME="${3:-speech.wav}"
 
     if [ "$VOICE" != "female" ] && [ "$VOICE" != "male" ]; then
         printf 'HATA: Ses female veya male olmali.\n' >&2
-    elif [[ "$NAME" == */* ]] || [[ "$NAME" != *.wav ]]; then
-        printf 'HATA: Yalnizca .wav dosya adi kullanin.\n' >&2
-    elif [ -e "$OUTPUT/$NAME" ] || [ -L "$OUTPUT/$NAME" ]; then
-        printf 'HATA: Cikti dosyasi zaten mevcut: %s\n' "$NAME" >&2
-    else
-        docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            --network none \
-            --read-only \
-            --tmpfs /tmp:rw,nosuid,nodev,size=256m \
-            --security-opt no-new-privileges \
-            --security-opt "label=level:$SELINUX_LEVEL" \
-            --cap-drop ALL \
-            --mount "type=bind,src=$MODELS,dst=/models,readonly" \
-            --mount "type=bind,src=$PROJECT/scripts/kokoro-tts.py,dst=/app/kokoro-tts.py,readonly" \
-            --mount "type=bind,src=$OUTPUT,dst=/output" \
-            --env HF_HUB_OFFLINE=1 \
-            --env HF_HUB_DISABLE_TELEMETRY=1 \
-            --entrypoint python \
-            "$IMAGE" \
-            /app/kokoro-tts.py \
-            --text "$TEXT" \
-            --voice "$VOICE" \
-            --output "/output/$NAME"
+        return 1
     fi
-fi
+
+    if [[ "$NAME" == */* ]] || [[ "$NAME" != *.wav ]]; then
+        printf 'HATA: Yalnizca .wav dosya adi kullanin.\n' >&2
+        return 1
+    fi
+
+    if [ -e "$OUTPUT/$NAME" ] || [ -L "$OUTPUT/$NAME" ]; then
+        printf 'HATA: Cikti dosyasi zaten mevcut.\n' >&2
+        return 1
+    fi
+
+    docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        --network none \
+        --read-only \
+        --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+        --security-opt no-new-privileges \
+        --security-opt "label=level:$SELINUX_LEVEL" \
+        --cap-drop ALL \
+        --mount "type=bind,src=$KOKORO_MODELS,dst=/models,readonly" \
+        --mount "type=bind,src=$PROJECT/scripts/kokoro-tts.py,dst=/app/kokoro-tts.py,readonly" \
+        --mount "type=bind,src=$OUTPUT,dst=/output" \
+        --env HF_HUB_OFFLINE=1 \
+        --env HF_HUB_DISABLE_TELEMETRY=1 \
+        --entrypoint python \
+        "$TTS_IMAGE" \
+        /app/kokoro-tts.py \
+        --text "$TEXT" \
+        --voice "$VOICE" \
+        --output "/output/$NAME"
+}
+
+stt() {
+    if [ "$#" -gt 2 ]; then
+        printf 'HATA: STT icin fazla arguman.\n' >&2
+        return 1
+    fi
+
+    local INPUT="${1:-}"
+    local LANGUAGE="${2:-}"
+
+    if [ -z "$INPUT" ] || [ ! -f "$INPUT" ]; then
+        printf 'HATA: Gecerli ses/video dosyasi gerekli.\n' >&2
+        return 1
+    fi
+
+    if [ ! -r "$INPUT" ]; then
+        printf 'HATA: Giris dosyasi okunamiyor.\n' >&2
+        return 1
+    fi
+
+    if [ ! -d "$OUTPUT" ] || [ ! -w "$OUTPUT" ]; then
+        printf 'HATA: Cikti dizini kullanilamiyor.\n' >&2
+        return 1
+    fi
+
+    if [ ! -f "$WHISPER_MODELS/base.pt" ]; then
+        printf 'HATA: Yerel base.pt modeli bulunamadi.\n' >&2
+        return 1
+    fi
+
+    local WORK
+    local BASENAME
+    local EXTENSION
+    local RESULT
+
+    WORK="$(mktemp -d "$OUTPUT/stt-XXXXXXXX")" || return 1
+
+    BASENAME="${INPUT##*/}"
+    EXTENSION="${BASENAME##*.}"
+
+    if [ "$EXTENSION" = "$BASENAME" ]; then
+        EXTENSION="audio"
+    fi
+
+    if ! cp -- "$INPUT" "$WORK/input.$EXTENSION"; then
+        printf 'HATA: Giris kopyalanamadi.\n' >&2
+        return 1
+    fi
+
+    local -a ARGS=(
+        python -m whisper
+        "/output/input.$EXTENSION"
+        --model base
+        --model_dir /models
+        --device cpu
+        --fp16 False
+        --output_format txt
+        --output_dir /output
+    )
+
+    if [ -n "$LANGUAGE" ]; then
+        ARGS+=(--language "$LANGUAGE")
+    fi
+
+    printf 'Calisma dizini: %s\n' "$WORK"
+
+    if ! docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        --network none \
+        --read-only \
+        --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+        --security-opt no-new-privileges \
+        --security-opt "label=level:$SELINUX_LEVEL" \
+        --cap-drop ALL \
+        --mount "type=bind,src=$WHISPER_MODELS,dst=/models,readonly" \
+        --mount "type=bind,src=$WORK,dst=/output" \
+        --env HF_HUB_OFFLINE=1 \
+        --env HF_HUB_DISABLE_TELEMETRY=1 \
+        "$STT_IMAGE" \
+        "${ARGS[@]}"; then
+
+        printf 'HATA: STT islemi basarisiz.\n' >&2
+        return 1
+    fi
+
+    RESULT="$WORK/input.txt"
+
+    if [ ! -f "$RESULT" ]; then
+        printf 'HATA: Metin dosyasi olusmadi.\n' >&2
+        return 1
+    fi
+
+    printf '\nMetin dosyasi: %s\n' "$RESULT"
+    cat -- "$RESULT"
+}
+
+case "${1:-}" in
+    tts)
+        shift
+        tts "$@"
+        ;;
+    stt)
+        shift
+        stt "$@"
+        ;;
+    *)
+        usage
+        ;;
+esac
