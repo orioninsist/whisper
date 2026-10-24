@@ -16,3 +16,5 @@ thumbs.db
 # Native yerel modeller ve calisma dosyalari
 /.local/
 /.venv/
+
+/orioninsist/

@@ -10,7 +10,7 @@ readme.content-type = "text/markdown"
 readme.file = "README.md"
 license = { text = "MIT" }
 authors = [ { name = "OpenAI" } ]
-requires-python = ">=3.8"
+requires-python = ">=3.11,<3.12"
 classifiers = [
   "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.8",
@@ -22,13 +22,12 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [
-  "more-itertools",
-  "numba",
-  "numpy",
-  "tiktoken",
-  "torch",
-  "tqdm",
-  "triton>=2; (platform_machine=='x86_64' and sys_platform=='linux') or sys_platform=='linux2'",
+  "more-itertools==11.2.1",
+  "numba==0.68.0",
+  "numpy==2.4.6",
+  "tiktoken==0.14.0",
+  "torch==2.14.1+cpu",
+  "tqdm==4.70.1",
 ]
 optional-dependencies.dev = [ "black", "flake8", "isort", "pytest", "scipy" ]
 urls = { Homepage = "https://github.com/openai/whisper" }
@@ -52,3 +51,24 @@ profile = "black"
 include_trailing_comma = true
 line_length = 88
 multi_line_output = 3
+
+# Local CPU dependency management via uv
+[dependency-groups]
+kokoro = [
+  "en-core-web-sm",
+  "kokoro==0.9.4",
+  "misaki[en]==0.9.4",
+  "spacy==3.8.16",
+]
+
+[tool.uv]
+default-groups = []
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+en-core-web-sm = { path = "./.local/kokoro/spacy/en_core_web_sm-3.8.0-py3-none-any.whl" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
