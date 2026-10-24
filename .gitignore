@@ -16,3 +16,6 @@ thumbs.db
 /compose.yaml.bak
 
 /compose.yaml.before-cpu
+
+# Native yerel modeller ve calisma dosyalari
+/.local/
