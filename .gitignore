@@ -13,9 +13,8 @@ thumbs.db
 # Kisisel yerel calisma dosyalari
 /orioninsist/
 
-/compose.yaml.bak
 
-/compose.yaml.before-cpu
 
 # Native yerel modeller ve calisma dosyalari
 /.local/
+/.venv/

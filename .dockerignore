@@ -9,5 +9,4 @@ __pycache__/
 .venv/
 .env
 .env.*
-compose.yaml.bak
-compose.yaml.before-cpu
+.local/
