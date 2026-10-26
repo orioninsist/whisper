@@ -1,0 +1,332 @@
+#!/usr/bin/env bash
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
+PROJECT="$(dirname -- "$SCRIPT_DIR")"
+KOKORO_MODELS="$PROJECT/.local/kokoro"
+WHISPER_MODELS="$PROJECT/.local/models"
+OUTPUT="$PROJECT/.local/outputs"
+
+IMAGE_TAG="${WHISPER_IMAGE_TAG:-setup-20261024T002634Z-3974091}"
+TTS_IMAGE="orioninsist/kokoro:${IMAGE_TAG}"
+STT_IMAGE="orioninsist/whisper:${IMAGE_TAG}"
+SELINUX_LEVEL="s0:c463,c896"
+
+usage() {
+    printf '%s\n' \
+        'Kullanim:' \
+        '  whisper tts "Metin" [female|male] [dosya.wav]' \
+        '  whisper stt /dosya/yolu/ses.mp3 [dil]' \
+        '  whisper stt /dosya/yolu/video.mp4 [dil]' \
+        '  whisper dialogue dosya.txt [cikti.wav]'
+}
+
+tts() {
+    if [ "$#" -gt 3 ]; then
+        printf 'HATA: TTS icin fazla arguman.\n' >&2
+        return 1
+    fi
+
+    if [ -z "${1:-}" ]; then
+        printf 'HATA: Metin gerekli.\n' >&2
+        return 1
+    fi
+
+    local TEXT="$1"
+    local VOICE="${2:-female}"
+    local NAME="${3:-speech.wav}"
+
+    if [ "$VOICE" != "female" ] && [ "$VOICE" != "male" ]; then
+        printf 'HATA: Ses female veya male olmali.\n' >&2
+        return 1
+    fi
+
+    if [[ "$NAME" == */* ]] || [[ "$NAME" != *.wav ]]; then
+        printf 'HATA: Yalnizca .wav dosya adi kullanin.\n' >&2
+        return 1
+    fi
+
+    if [ -L "$OUTPUT" ]; then
+        printf 'HATA: Cikti dizini sembolik baglanti olamaz.\n' >&2
+        return 1
+    fi
+
+    if [ ! -d "$OUTPUT" ]; then
+        mkdir -p -- "$OUTPUT" || return 1
+    fi
+
+    if [ -L "$OUTPUT" ] || [ ! -d "$OUTPUT" ]; then
+        printf 'HATA: Guvenli cikti dizini bulunamadi.\n' >&2
+        return 1
+    fi
+
+    if [ ! -w "$OUTPUT" ]; then
+        printf 'HATA: Cikti dizini kullanilamiyor.\n' >&2
+        return 1
+    fi
+
+    if [ -e "$OUTPUT/$NAME" ] || [ -L "$OUTPUT/$NAME" ]; then
+        printf 'HATA: Cikti dosyasi zaten mevcut.\n' >&2
+        return 1
+    fi
+
+    docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        --network none \
+        --read-only \
+        --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+        --security-opt no-new-privileges \
+        --security-opt "label=level:$SELINUX_LEVEL" \
+        --cap-drop ALL \
+        --mount "type=bind,src=$KOKORO_MODELS,dst=/models,readonly" \
+        --mount "type=bind,src=$PROJECT/scripts/kokoro-tts.py,dst=/app/kokoro-tts.py,readonly" \
+        --mount "type=bind,src=$OUTPUT,dst=/output" \
+        --env HF_HUB_OFFLINE=1 \
+        --env HF_HUB_DISABLE_TELEMETRY=1 \
+        --entrypoint python \
+        "$TTS_IMAGE" \
+        /app/kokoro-tts.py \
+        --text "$TEXT" \
+        --voice "$VOICE" \
+        --output "/output/$NAME"
+
+    local STATUS=$?
+
+    if [ "$STATUS" -ne 0 ]; then
+        return "$STATUS"
+    fi
+
+    if [ ! -f "$OUTPUT/$NAME" ]; then
+        printf 'HATA: TTS cikti dosyasi bulunamadi.\n' >&2
+        return 1
+    fi
+
+    printf '\n=== TTS CIKTI BILGILERI ===\n'
+    printf 'Dosya adi: %s\n' "$NAME"
+    printf 'Tam dosya yolu: %s\n' "$OUTPUT/$NAME"
+    printf 'Bulundugu dizin: %s\n' "$OUTPUT"
+}
+
+stt() {
+    if [ "$#" -gt 2 ]; then
+        printf 'HATA: STT icin fazla arguman.\n' >&2
+        return 1
+    fi
+
+    local INPUT="${1:-}"
+    local LANGUAGE="${2:-}"
+
+    if [ -z "$INPUT" ] || [ ! -f "$INPUT" ]; then
+        printf 'HATA: Gecerli ses/video dosyasi gerekli.\n' >&2
+        return 1
+    fi
+
+    if [ ! -r "$INPUT" ]; then
+        printf 'HATA: Giris dosyasi okunamiyor.\n' >&2
+        return 1
+    fi
+
+    if [ -L "$OUTPUT" ]; then
+        printf 'HATA: Cikti dizini sembolik baglanti olamaz.\n' >&2
+        return 1
+    fi
+
+    if [ ! -d "$OUTPUT" ]; then
+        mkdir -p -- "$OUTPUT" || return 1
+    fi
+
+    if [ -L "$OUTPUT" ] || [ ! -d "$OUTPUT" ]; then
+        printf 'HATA: Guvenli cikti dizini bulunamadi.\n' >&2
+        return 1
+    fi
+
+    if [ ! -w "$OUTPUT" ]; then
+        printf 'HATA: Cikti dizini kullanilamiyor.\n' >&2
+        return 1
+    fi
+
+    if [ ! -f "$WHISPER_MODELS/base.pt" ]; then
+        printf 'HATA: Yerel base.pt modeli bulunamadi.\n' >&2
+        return 1
+    fi
+
+    local WORK
+    local BASENAME
+    local EXTENSION
+    local RESULT
+
+    WORK="$(mktemp -d "$OUTPUT/stt-XXXXXXXX")" || return 1
+
+    BASENAME="${INPUT##*/}"
+    EXTENSION="${BASENAME##*.}"
+
+    if [ "$EXTENSION" = "$BASENAME" ]; then
+        EXTENSION="audio"
+    fi
+
+    if ! cp -- "$INPUT" "$WORK/input.$EXTENSION"; then
+        printf 'HATA: Giris kopyalanamadi.\n' >&2
+        return 1
+    fi
+
+    local -a ARGS=(
+        python -m whisper
+        "/output/input.$EXTENSION"
+        --model base
+        --model_dir /models
+        --device cpu
+        --fp16 False
+        --output_format txt
+        --output_dir /output
+    )
+
+    if [ -n "$LANGUAGE" ]; then
+        ARGS+=(--language "$LANGUAGE")
+    fi
+
+    printf 'Calisma dizini: %s\n' "$WORK"
+
+    if ! docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        --network none \
+        --read-only \
+        --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+        --security-opt no-new-privileges \
+        --security-opt "label=level:$SELINUX_LEVEL" \
+        --cap-drop ALL \
+        --mount "type=bind,src=$WHISPER_MODELS,dst=/models,readonly" \
+        --mount "type=bind,src=$WORK,dst=/output" \
+        --env HF_HUB_OFFLINE=1 \
+        --env HF_HUB_DISABLE_TELEMETRY=1 \
+        "$STT_IMAGE" \
+        "${ARGS[@]}"; then
+
+        printf 'HATA: STT islemi basarisiz.\n' >&2
+        return 1
+    fi
+
+    RESULT="$WORK/input.txt"
+
+    if [ ! -f "$RESULT" ]; then
+        printf 'HATA: Metin dosyasi olusmadi.\n' >&2
+        return 1
+    fi
+
+    printf '\nMetin dosyasi: %s\n' "$RESULT"
+    cat -- "$RESULT"
+}
+
+dialogue() {
+    if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+        printf 'HATA: Kullanim: whisper dialogue dosya.txt [cikti.wav]\n' >&2
+        return 1
+    fi
+
+    local INPUT="$1"
+    local NAME="${2:-dialogue.wav}"
+    local SCRIPT="$PROJECT/scripts/dialogue-tts.candidate.py"
+
+    if [ -L "$INPUT" ]; then
+        printf 'HATA: Giris dosyasi sembolik baglanti olamaz.\n' >&2
+        return 1
+    fi
+
+    if [[ "$INPUT" != *.txt ]]; then
+        printf 'HATA: Giris dosyasi .txt uzantili olmali.\n' >&2
+        return 1
+    fi
+
+    if [ ! -f "$INPUT" ] || [ ! -r "$INPUT" ]; then
+        printf 'HATA: Okunabilir TXT dosyasi gerekli.\n' >&2
+        return 1
+    fi
+
+    if [[ "$NAME" == */* ]] || [[ "$NAME" != *.wav ]] || [[ "$NAME" == .* ]]; then
+        printf 'HATA: Gecerli WAV dosya adi gerekli.\n' >&2
+        return 1
+    fi
+
+    if [ ! -f "$SCRIPT" ] || [ ! -r "$SCRIPT" ]; then
+        printf 'HATA: Dialogue Python dosyasi bulunamadi.\n' >&2
+        return 1
+    fi
+
+    if [ -L "$OUTPUT" ]; then
+        printf 'HATA: Cikti dizini sembolik baglanti olamaz.\n' >&2
+        return 1
+    fi
+
+    if [ ! -d "$OUTPUT" ]; then
+        mkdir -p -- "$OUTPUT" || return 1
+    fi
+
+    if [ -L "$OUTPUT" ] || [ ! -d "$OUTPUT" ] || [ ! -w "$OUTPUT" ]; then
+        printf 'HATA: Guvenli cikti dizini kullanilamiyor.\n' >&2
+        return 1
+    fi
+
+    if [ -e "$OUTPUT/$NAME" ] || [ -L "$OUTPUT/$NAME" ]; then
+        printf 'HATA: Cikti dosyasi zaten mevcut.\n' >&2
+        return 1
+    fi
+
+    local WORK
+    WORK="$(mktemp -d "$OUTPUT/dialogue-XXXXXXXX")" || return 1
+
+    if ! cp -- "$INPUT" "$WORK/input.txt"; then
+        printf 'HATA: Giris dosyasi kopyalanamadi.\n' >&2
+        return 1
+    fi
+
+    if ! docker run --rm \
+        --user "$(id -u):$(id -g)" \
+        --network none \
+        --read-only \
+        --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+        --security-opt no-new-privileges \
+        --security-opt "label=level:$SELINUX_LEVEL" \
+        --cap-drop ALL \
+        --mount "type=bind,src=$KOKORO_MODELS,dst=/models,readonly" \
+        --mount "type=bind,src=$SCRIPT,dst=/app/dialogue-tts.py,readonly" \
+        --mount "type=bind,src=$WORK,dst=/work" \
+        --env HF_HUB_OFFLINE=1 \
+        --env HF_HUB_DISABLE_TELEMETRY=1 \
+        --entrypoint python \
+        "$TTS_IMAGE" \
+        /app/dialogue-tts.py \
+        --input /work/input.txt \
+        --output /work/dialogue.wav; then
+
+        printf 'HATA: Dialogue islemi basarisiz.\n' >&2
+        return 1
+    fi
+
+    if [ ! -s "$WORK/dialogue.wav" ]; then
+        printf 'HATA: WAV dosyasi olusmadi.\n' >&2
+        return 1
+    fi
+
+    if ! ln -- "$WORK/dialogue.wav" "$OUTPUT/$NAME"; then
+        printf 'HATA: Cikti dosyasi guvenle yerlestirilemedi.\n' >&2
+        return 1
+    fi
+
+    printf '\nDiyalog WAV: %s\n' "$OUTPUT/$NAME"
+}
+
+case "${1:-}" in
+    tts)
+        shift
+        tts "$@"
+        ;;
+    stt)
+        shift
+        stt "$@"
+        ;;
+    dialogue)
+        shift
+        dialogue "$@"
+        ;;
+    *)
+        usage
+        ;;
+esac
